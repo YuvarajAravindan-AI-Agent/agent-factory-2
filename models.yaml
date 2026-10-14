@@ -1,0 +1,13 @@
+# Model tiers. Confirm current IDs on the day phase 2 starts; placeholders only.
+tiers:
+  strong: "TBD-confirm-in-phase-2"
+  fast: "TBD-confirm-in-phase-2"
+roles:
+  architect: strong
+  coder: strong
+  fixer: fast
+  tester: fast
+  docs: fast
+  reviewer: fast   # must differ from the coder's tier or version
+  classifier: fast
+temperature: 0.0
