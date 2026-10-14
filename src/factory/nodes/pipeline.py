@@ -41,9 +41,16 @@ class Ports:
 
 
 def _call(
-    p: Ports, state: FactoryState, role: str, tier: str, prompt: str
+    p: Ports,
+    state: FactoryState,
+    role: str,
+    tier: str,
+    prompt: str,
+    schema_name: str | None = None,
 ) -> tuple[ModelResponse, Update]:
-    resp = p.model.invoke(ModelRequest(role=role, tier=tier, prompt=prompt))
+    resp = p.model.invoke(
+        ModelRequest(role=role, tier=tier, prompt=prompt, schema_name=schema_name)
+    )
     used = state.get("tokens_used", 0) + resp.input_tokens + resp.output_tokens
     update: Update = {"tokens_used": used}
     budget = state.get("token_budget", 0)
@@ -107,7 +114,12 @@ def build_nodes(p: Ports) -> dict[str, Node]:
         findings: ReviewFindings | None = None
         for _ in range(MAX_REVIEW_PARSE_ATTEMPTS):  # reject and retry on a schema miss
             resp, step = _call(
-                p, {**state, "tokens_used": used}, "reviewer", "fast", "review against the spec"
+                p,
+                {**state, "tokens_used": used},
+                "reviewer",
+                "fast",
+                "review against the spec",
+                "ReviewFindings",
             )
             used = step["tokens_used"]
             upd.update(step)
