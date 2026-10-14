@@ -1,0 +1,10 @@
+# Skeleton only: Postgres for checkpoints/ledger. Worker, control service and proxy arrive later.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/pg_password
+    secrets: [pg_password]
+secrets:
+  pg_password:
+    file: ./secrets/pg_password.txt  # create locally; never commit
