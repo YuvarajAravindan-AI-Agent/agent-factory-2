@@ -18,6 +18,8 @@ from factory.control.approval import PgApproval, SmtpMailer
 from factory.evidence import Evidence, FsEvidence, PgAudit
 from factory.graph import build_graph
 from factory.nodes.pipeline import Ports
+from factory.ports import ModelPort
+from factory.ports.models import ModelRequest, ModelResponse
 
 
 def need(name: str) -> str:
@@ -45,12 +47,20 @@ def build_approval() -> PgApproval:
     )
 
 
+class NoModel:
+    def invoke(self, request: ModelRequest) -> ModelResponse:
+        raise RuntimeError("no model configured in this process (AF_GEMINI_KEY unset)")
+
+
 def build_ports(approval: PgApproval) -> Ports:
     dsn = need("AF_PG_DSN")
     cfg = load_model_config(os.environ.get("AF_MODELS", "models.yaml"))
-    model = GeminiModel(
-        cfg, default_chat_factory(need("AF_GEMINI_KEY"), os.environ.get("AF_GEMINI_BASE_URL"))
-    )
+    model: ModelPort
+    key = os.environ.get("AF_GEMINI_KEY")
+    if key:
+        model = GeminiModel(cfg, default_chat_factory(key, os.environ.get("AF_GEMINI_BASE_URL")))
+    else:  # the control service only resumes paused runs and never calls a model
+        model = NoModel()
     client = ExecutorClient(os.environ.get("AF_EXECUTOR_SOCK", "/run/factory/executor.sock"))
     evidence = Evidence(
         FsEvidence(Path(os.environ.get("AF_EVIDENCE_DIR", "/var/lib/factory/evidence"))),
