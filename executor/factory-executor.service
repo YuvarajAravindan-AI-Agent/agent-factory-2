@@ -1,0 +1,19 @@
+[Unit]
+Description=Agent Factory executor (Unix-socket daemon in front of Docker/gVisor)
+After=docker.service
+Requires=docker.service
+
+[Service]
+User=factory-exec
+Group=factory-exec
+WorkingDirectory=/opt/agent-factory-2
+Environment=PYTHONPATH=/opt/agent-factory-2/src
+ExecStart=/opt/agent-factory-2/.venv/bin/python -m factory.executor.server /opt/agent-factory-2/policy.yaml /run/factory/executor.sock
+RuntimeDirectory=factory
+RuntimeDirectoryMode=0750
+Restart=on-failure
+NoNewPrivileges=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
