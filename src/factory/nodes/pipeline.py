@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections.abc import Callable
@@ -10,6 +11,7 @@ from typing import Any
 from langgraph.types import interrupt
 from pydantic import ValidationError
 
+from factory.guardrails import classify, scan_files, scan_text
 from factory.ports import ApprovalPort, EvidencePort, GatePort, ModelPort, SandboxPort
 from factory.ports.models import ModelRequest, ModelResponse
 from factory.state import (
@@ -52,7 +54,18 @@ def _call(
         ModelRequest(role=role, tier=tier, prompt=prompt, schema_name=schema_name)
     )
     used = state.get("tokens_used", 0) + resp.input_tokens + resp.output_tokens
-    update: Update = {"tokens_used": used}
+    update: Update = {
+        "tokens_used": used,
+        "calls": [
+            {
+                "role": role,
+                "tier": tier,
+                "model_id": resp.model_id,
+                "prompt_hash": resp.prompt_hash,
+                "tokens": resp.input_tokens + resp.output_tokens,
+            }
+        ],
+    }
     budget = state.get("token_budget", 0)
     if budget and used > budget:
         update["status"] = "BudgetExceeded"
@@ -60,13 +73,49 @@ def _call(
     return resp, update
 
 
+def _classifier_update(state: FactoryState, resp: ModelResponse) -> Update:
+    return {
+        "tokens_used": state.get("tokens_used", 0) + resp.input_tokens + resp.output_tokens,
+        "calls": [
+            {
+                "role": "classifier",
+                "tier": "fast",
+                "model_id": resp.model_id,
+                "prompt_hash": resp.prompt_hash,
+                "tokens": resp.input_tokens + resp.output_tokens,
+            }
+        ],
+    }
+
+
 def build_nodes(p: Ports) -> dict[str, Node]:
-    def screen_in(state: FactoryState) -> Update:
-        resp, upd = _call(p, state, "classifier", "fast", f"screen spec:\n{state['spec']}")
-        p.evidence.write(state["run_id"], "guardrail/in.json", json.dumps({"v": resp.text}))
-        if resp.text.strip().upper().startswith("BLOCK"):
+    def screen(state: FactoryState, artifact: str, kind: str, evidence_path: str) -> Update:
+        """Layer A (deterministic) then layer B (separate model call). Block on either."""
+        run = state["run_id"]
+        hits = scan_text(artifact) if kind == "spec" else []
+        upd: Update = {}
+        verdict_doc: dict[str, Any] = {"layer_a": [str(h) for h in hits]}
+        if hits:
             upd["status"] = "GuardrailBlocked"
+            upd["guardrail_findings"] = [str(h) for h in hits]
+        else:  # the classifier never sees an artifact that layer A already rejected
+            v, resp = classify(p.model, artifact, kind)
+            verdict_doc["layer_b"] = {
+                "verdict": v.verdict,
+                "reason": v.reason,
+                "prompt_hash": resp.prompt_hash,
+            }
+            upd.update(_classifier_update(state, resp))
+            if v.blocked:
+                upd["status"] = "GuardrailBlocked"
+        p.evidence.write(run, evidence_path, json.dumps(verdict_doc, sort_keys=True))
+        p.evidence.audit(
+            run, "guardrail", f"screen_{kind}", json.dumps(verdict_doc, sort_keys=True)
+        )
         return upd
+
+    def screen_in(state: FactoryState) -> Update:
+        return screen(state, state["spec"], "spec", "guardrail/in.json")
 
     def architect(state: FactoryState) -> Update:
         resp, upd = _call(p, state, "architect", "strong", f"plan for spec:\n{state['spec']}")
@@ -122,7 +171,10 @@ def build_nodes(p: Ports) -> dict[str, Node]:
                 "ReviewFindings",
             )
             used = step["tokens_used"]
-            upd.update(step)
+            upd["tokens_used"] = used
+            upd["calls"] = [*upd.get("calls", []), *step["calls"]]
+            if "status" in step:
+                upd["status"] = step["status"]
             try:
                 findings = ReviewFindings.model_validate_json(resp.text)
                 p.evidence.write(state["run_id"], "review/review.json", resp.text)
@@ -153,17 +205,50 @@ def build_nodes(p: Ports) -> dict[str, Node]:
         p.sandbox.write_file(state["run_id"], "README.md", resp.text)
         return upd
 
+    def read_workspace(run_id: str) -> dict[str, str]:
+        return {f: p.sandbox.read_file(run_id, f) for f in sorted(p.sandbox.list_dir(run_id))}
+
     def screen_out(state: FactoryState) -> Update:
-        resp, upd = _call(p, state, "classifier", "fast", "screen generated docs and code")
-        p.evidence.write(state["run_id"], "guardrail/out.json", json.dumps({"v": resp.text}))
-        if resp.text.strip().upper().startswith("BLOCK"):
+        run = state["run_id"]
+        files = read_workspace(run)
+        hits = scan_files(files)
+        upd: Update = {}
+        doc: dict[str, Any] = {"layer_a": [str(h) for h in hits]}
+        if hits:
             upd["status"] = "GuardrailBlocked"
+            upd["guardrail_findings"] = [str(h) for h in hits]
+        else:
+            bundle = "\n".join(f"### {n}\n{t}" for n, t in files.items())
+            v, resp = classify(p.model, bundle, "generated-code")
+            doc["layer_b"] = {
+                "verdict": v.verdict,
+                "reason": v.reason,
+                "prompt_hash": resp.prompt_hash,
+            }
+            upd.update(_classifier_update(state, resp))
+            if v.blocked:
+                upd["status"] = "GuardrailBlocked"
+        p.evidence.write(run, "guardrail/out.json", json.dumps(doc, sort_keys=True))
+        p.evidence.audit(run, "guardrail", "screen_out", json.dumps(doc, sort_keys=True))
         return upd
 
     def package(state: FactoryState) -> Update:
-        files = p.sandbox.list_dir(state["run_id"])
-        digest = p.evidence.write(state["run_id"], "SHA256SUMS", "\n".join(sorted(files)))
-        p.approval.request(state["run_id"], digest)
+        run = state["run_id"]
+        files = read_workspace(run)
+        digest = p.evidence.package(run, files)
+        manifest = {
+            "run_id": run,
+            "spec_sha256": hashlib.sha256(state["spec"].encode()).hexdigest(),
+            "package_sha256": digest,
+            "model_calls": state.get("calls", []),
+            "tokens_used": state.get("tokens_used", 0),
+            "test_fix_rounds": state.get("test_fix_rounds", 0),
+            "review_fix_rounds": state.get("review_fix_rounds", 0),
+            "baseline_tests": state.get("baseline_tests", 0),
+        }
+        p.evidence.write(run, "manifest.json", json.dumps(manifest, sort_keys=True, indent=1))
+        p.evidence.audit(run, "factory", "package", digest)
+        p.approval.request(run, digest)
         return {"package_sha256": digest}
 
     def approval(state: FactoryState) -> Update:

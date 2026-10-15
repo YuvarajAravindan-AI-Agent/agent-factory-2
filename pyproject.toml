@@ -14,10 +14,20 @@ dependencies = [
   "uvicorn",
   "psycopg[binary]",
   "pyyaml",
+  "python-multipart>=0.0.32",
 ]
 
+[project.scripts]
+factory = "factory.cli:main"
+
 [dependency-groups]
-dev = ["pytest", "ruff", "mypy", "types-PyYAML"]
+dev = [
+    "pytest",
+    "ruff",
+    "mypy",
+    "types-PyYAML",
+    "httpx>=0.28.1",
+]
 
 [build-system]
 requires = ["hatchling"]

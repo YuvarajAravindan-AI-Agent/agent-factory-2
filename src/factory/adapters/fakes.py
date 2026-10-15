@@ -24,12 +24,13 @@ class FakeModel:
     def __init__(self, scripts: dict[str, list[str]] | None = None, default: str = "ok") -> None:
         self.scripts = {k: list(v) for k, v in (scripts or {}).items()}
         self.default = default
+        self.role_defaults = {"classifier": '{"verdict":"ALLOW","reason":"fake"}'}
         self.calls: list[ModelRequest] = []
 
     def invoke(self, request: ModelRequest) -> ModelResponse:
         self.calls.append(request)
         queue = self.scripts.get(request.role)
-        text = queue.pop(0) if queue else self.default
+        text = queue.pop(0) if queue else self.role_defaults.get(request.role, self.default)
         return ModelResponse(
             text=text,
             model_id=f"fake-{request.tier}",
@@ -126,6 +127,11 @@ class FakeEvidence:
             }
         )
         return row_hash
+
+    def package(self, run_id: str, files: dict[str, str]) -> str:
+        body = "\n".join(f"{sha256(files[n])}  {n}" for n in sorted(files))
+        self.files[(run_id, "SHA256SUMS")] = body
+        return sha256(body)
 
     def verify_chain(self) -> bool:
         prev = self.GENESIS

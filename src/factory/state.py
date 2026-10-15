@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TypedDict
+import operator
+from typing import Annotated, TypedDict
 
 from pydantic import BaseModel
 
@@ -50,3 +51,5 @@ class FactoryState(TypedDict, total=False):
     tokens_used: int
     token_budget: int
     package_sha256: str
+    calls: Annotated[list[dict[str, object]], operator.add]
+    guardrail_findings: list[str]

@@ -46,6 +46,9 @@ class EvidencePort(Protocol):
         ...
 
     def verify_chain(self) -> bool: ...
+    def package(self, run_id: str, files: dict[str, str]) -> str:
+        """Write package.zip and SHA256SUMS; return the package SHA-256."""
+        ...
 
 
 __all__ = [

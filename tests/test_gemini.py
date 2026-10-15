@@ -154,7 +154,8 @@ def test_graph_runs_through_the_gemini_adapter_on_prior_auth_spec() -> None:
     not model quality."""
     code = "from fastapi import FastAPI\napp = FastAPI()\n"
     review = '{"critical":0,"high":0,"summary":"ok"}'
-    items = ["SAFE", "PLAN: three endpoints", code, "tests", review, "# README", "SAFE"]
+    allow = '{"verdict":"ALLOW"}'
+    items = [allow, "PLAN: three endpoints", code, "tests", review, "# README", allow]
     chat = Scripted(items=items)
     model = GeminiModel(CFG, lambda _m, _t: chat, sleep=lambda _s: None)
     sandbox = FakeSandbox(lambda _c: CommandResult(exit_code=0, stdout="3 passed"))
