@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from factory.guardrails import classify, scan_files, scan_text
 from factory.nodes import prompts
 from factory.nodes.bundle import is_test_path, parse_bundle, safe_path, strip_fences
+from factory.nodes.version import FACTORY_VERSION, prompts_version
 from factory.ports import ApprovalPort, EvidencePort, GatePort, ModelPort, SandboxPort
 from factory.ports.models import ModelRequest, ModelResponse
 from factory.state import (
@@ -21,6 +22,7 @@ from factory.state import (
     FactoryState,
     ReviewFindings,
 )
+from factory.tracing import run_metadata, traced
 
 Update = dict[str, Any]
 Node = Callable[[FactoryState], Update]
@@ -53,8 +55,9 @@ def _call(
     prompt: str,
     schema_name: str | None = None,
 ) -> tuple[ModelResponse, Update]:
-    resp = p.model.invoke(
-        ModelRequest(role=role, tier=tier, prompt=prompt, schema_name=schema_name)
+    request = ModelRequest(role=role, tier=tier, prompt=prompt, schema_name=schema_name)
+    resp = traced(f"model:{role}", "llm", **run_metadata(state, role, tier))(p.model.invoke)(
+        request
     )
     used = state.get("tokens_used", 0) + resp.input_tokens + resp.output_tokens
     update: Update = {
@@ -194,8 +197,11 @@ def build_nodes(p: Ports) -> dict[str, Node]:
         return upd
 
     def gate(state: FactoryState) -> Update:
-        s1 = p.gate.stage1_fetch(state["run_id"])
-        s2 = p.gate.stage2_test(state["run_id"], state.get("baseline_tests", 0))
+        meta = run_metadata(state)
+        s1 = traced("gate.stage1", "tool", **meta)(p.gate.stage1_fetch)(state["run_id"])
+        s2 = traced("gate.stage2", "tool", **meta)(p.gate.stage2_test)(
+            state["run_id"], state.get("baseline_tests", 0)
+        )
         p.evidence.write(state["run_id"], "gate/stage1.log", s1.log)
         p.evidence.write(state["run_id"], "gate/stage2/junit.xml", s2.junit_xml)
         ok = s1.passed and s2.passed and not s2.tamper_findings
@@ -282,6 +288,8 @@ def build_nodes(p: Ports) -> dict[str, Node]:
         digest = p.evidence.package(run, files)
         manifest = {
             "run_id": run,
+            "factory_version": FACTORY_VERSION,
+            "prompts_version": prompts_version(),
             "spec_sha256": hashlib.sha256(state["spec"].encode()).hexdigest(),
             "package_sha256": digest,
             "model_calls": state.get("calls", []),

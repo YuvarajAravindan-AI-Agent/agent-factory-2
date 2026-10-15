@@ -12,6 +12,12 @@ from factory.evidence import PgAudit
 
 
 def main(argv: list[str] | None = None) -> None:
+    raw = sys.argv[1:] if argv is None else argv
+    if raw and raw[0] == "evals":
+        from factory.evals.cli import main as evals_main
+
+        evals_main(raw[1:])
+        return
     ap = argparse.ArgumentParser(prog="factory")
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run")

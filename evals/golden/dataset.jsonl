@@ -1,0 +1,3 @@
+{"name":"prior-auth","vertical":"healthcare","spec":"specs/golden/prior-auth.md","expect":{"min_tests":20,"must_reach_approval":true}}
+{"name":"loan-prequal","vertical":"finance","spec":"specs/golden/loan-prequal.md","expect":{"min_tests":20,"must_reach_approval":true}}
+{"name":"usage-quota","vertical":"telecom","spec":"specs/golden/usage-quota.md","expect":{"min_tests":20,"must_reach_approval":true}}

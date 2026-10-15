@@ -1,0 +1,6 @@
+# Release-blocking regression policy for the golden evals (scripted/replayed runs are exact).
+max_extra_fix_rounds: 0
+max_extra_blockers: 0
+token_growth: 0.25
+tests_floor: 0.8
+# wall_growth: 1.0   # enable for real-model baselines; replayed runs are not timed

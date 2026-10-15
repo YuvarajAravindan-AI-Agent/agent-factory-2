@@ -52,21 +52,22 @@ class NoModel:
         raise RuntimeError("no model configured in this process (AF_GEMINI_KEY unset)")
 
 
+def build_model() -> ModelPort:
+    cfg = load_model_config(os.environ.get("AF_MODELS", "models.yaml"))
+    key = os.environ.get("AF_GEMINI_KEY")
+    if not key:  # the control service only resumes paused runs and never calls a model
+        return NoModel()
+    return GeminiModel(cfg, default_chat_factory(key, os.environ.get("AF_GEMINI_BASE_URL")))
+
+
 def build_ports(approval: PgApproval) -> Ports:
     dsn = need("AF_PG_DSN")
-    cfg = load_model_config(os.environ.get("AF_MODELS", "models.yaml"))
-    model: ModelPort
-    key = os.environ.get("AF_GEMINI_KEY")
-    if key:
-        model = GeminiModel(cfg, default_chat_factory(key, os.environ.get("AF_GEMINI_BASE_URL")))
-    else:  # the control service only resumes paused runs and never calls a model
-        model = NoModel()
     client = ExecutorClient(os.environ.get("AF_EXECUTOR_SOCK", "/run/factory/executor.sock"))
     evidence = Evidence(
         FsEvidence(Path(os.environ.get("AF_EVIDENCE_DIR", "/var/lib/factory/evidence"))),
         PgAudit(dsn),
     )
-    return Ports(model, client, client, approval, evidence)
+    return Ports(build_model(), client, client, approval, evidence)
 
 
 def run_spec(ports: Ports, run_id: str, spec: str, token_budget: int = 400_000) -> str:

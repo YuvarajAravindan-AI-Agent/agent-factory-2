@@ -1,0 +1,62 @@
+{
+ "cases": [
+  {
+   "blockers": 0,
+   "error": "",
+   "model_calls": 7,
+   "name": "prior-auth",
+   "reached_approval": true,
+   "review_fix_rounds": 0,
+   "stop_state": "",
+   "test_fix_rounds": 0,
+   "tests_total": 44,
+   "tokens": 27411,
+   "vertical": "healthcare",
+   "wall_s": 3.34
+  },
+  {
+   "blockers": 0,
+   "error": "",
+   "model_calls": 7,
+   "name": "loan-prequal",
+   "reached_approval": true,
+   "review_fix_rounds": 0,
+   "stop_state": "",
+   "test_fix_rounds": 0,
+   "tests_total": 29,
+   "tokens": 25952,
+   "vertical": "finance",
+   "wall_s": 3.02
+  },
+  {
+   "blockers": 0,
+   "error": "",
+   "model_calls": 8,
+   "name": "usage-quota",
+   "reached_approval": true,
+   "review_fix_rounds": 0,
+   "stop_state": "",
+   "test_fix_rounds": 1,
+   "tests_total": 31,
+   "tokens": 40335,
+   "vertical": "telecom",
+   "wall_s": 4.77
+  }
+ ],
+ "factory_version": "0.5.0",
+ "meta": {
+  "backend": "local",
+  "model": "replay",
+  "prompt_drift": 1,
+  "stamp": "20261015123528"
+ },
+ "prompts_version": "d21228c4d192",
+ "summary": {
+  "blockers": 0,
+  "cases": 3,
+  "fix_rounds": 1,
+  "reached_approval_rate": 1.0,
+  "tokens": 93698,
+  "wall_s": 11.13
+ }
+}

@@ -8,6 +8,7 @@ import socket
 from typing import Any
 
 from factory.ports.models import CommandResult, GateResult
+from factory.tracing import traced
 
 
 class ExecutorError(Exception):
@@ -31,6 +32,9 @@ class ExecutorClient:
         self.timeout_s = timeout_s
 
     def _call(self, route: str, **args: Any) -> dict[str, Any]:
+        return traced(f"executor{route}", "tool")(self._raw_call)(route, **args)
+
+    def _raw_call(self, route: str, **args: Any) -> dict[str, Any]:
         conn = _UnixConn(self.sock_path, self.timeout_s)
         try:
             conn.request("POST", route, json.dumps(args), {"Content-Type": "application/json"})
