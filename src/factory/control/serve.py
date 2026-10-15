@@ -30,6 +30,7 @@ def main() -> None:
         host="127.0.0.1",
         port=int(os.environ.get("AF_CONTROL_PORT", "8088")),
         log_level="info",
+        access_log=False,  # the approval token travels in the query string
     )
 
 
