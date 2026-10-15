@@ -150,3 +150,10 @@ class PgApproval:
                 (self.clock(),),
             ).fetchall()
         return [r[0] for r in rows]
+
+    def mark_expired(self, run_id: str) -> None:
+        with psycopg.connect(self.dsn) as c, c.transaction():
+            c.execute(
+                "UPDATE approvals SET decision='expired' WHERE run_id=%s AND decision='pending'",
+                (run_id,),
+            )

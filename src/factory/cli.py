@@ -55,6 +55,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.cmd == "expire":
         for rid in approval.lapsed_pending():
             print(rid, rt.resume_run(ports, rid, "expired"))
+            approval.mark_expired(rid)  # stop re-listing it on every sweep
         return
     if args.cmd == "run":
         stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
