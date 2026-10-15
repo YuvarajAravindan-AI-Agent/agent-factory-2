@@ -26,6 +26,9 @@ class SandboxPort(Protocol):
 class GatePort(Protocol):
     def stage1_fetch(self, run_id: str) -> GateResult: ...
     def stage2_test(self, run_id: str, baseline_test_count: int) -> GateResult: ...
+    def record_manifest(self, run_id: str) -> dict[str, str]:
+        """Freeze hashes of the test files after the Tester step."""
+        ...
 
 
 @runtime_checkable

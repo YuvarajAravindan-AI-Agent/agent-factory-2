@@ -70,6 +70,10 @@ class FakeGate:
     def stage1_fetch(self, run_id: str) -> GateResult:
         return GateResult(stage=1, passed=True, log="fake deps fetched")
 
+    def record_manifest(self, run_id: str) -> dict[str, str]:
+        self.manifests = getattr(self, "manifests", 0) + 1
+        return {}
+
     def stage2_test(self, run_id: str, baseline_test_count: int) -> GateResult:
         if self.stage2_results:
             return self.stage2_results.pop(0)

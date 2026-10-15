@@ -43,7 +43,7 @@ def build_approval() -> PgApproval:
         need("AF_PUBLIC_URL"),
         need("AF_APPROVER_EMAIL"),
         mailer,
-        ttl=timedelta(hours=int(os.environ.get("AF_APPROVAL_TTL_H", "24"))),
+        ttl=timedelta(minutes=int(os.environ.get("AF_APPROVAL_TTL_MIN", "1440"))),
     )
 
 
@@ -71,7 +71,7 @@ def build_ports(approval: PgApproval) -> Ports:
 
 def run_spec(ports: Ports, run_id: str, spec: str, token_budget: int = 400_000) -> str:
     """Run until the graph pauses at approval (or stops). Returns the status."""
-    with postgres_saver(need("AF_PG_DSN")) as saver:
+    with postgres_saver(need("AF_PG_DSN"), setup=False) as saver:
         g = build_graph(ports, saver)
         cfg: Any = {"configurable": {"thread_id": run_id}}
         g.invoke(
@@ -81,7 +81,7 @@ def run_spec(ports: Ports, run_id: str, spec: str, token_budget: int = 400_000) 
 
 
 def resume_run(ports: Ports, run_id: str, decision: str) -> str:
-    with postgres_saver(need("AF_PG_DSN")) as saver:
+    with postgres_saver(need("AF_PG_DSN"), setup=False) as saver:
         g = build_graph(ports, saver)
         cfg: Any = {"configurable": {"thread_id": run_id}}
         if not g.get_state(cfg).next:  # already finished or never paused: nothing to resume
@@ -91,7 +91,7 @@ def resume_run(ports: Ports, run_id: str, decision: str) -> str:
 
 
 def run_status(ports: Ports, run_id: str) -> str:
-    with postgres_saver(need("AF_PG_DSN")) as saver:
+    with postgres_saver(need("AF_PG_DSN"), setup=False) as saver:
         g = build_graph(ports, saver)
         return _status(g, {"configurable": {"thread_id": run_id}})
 

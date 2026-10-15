@@ -98,7 +98,9 @@ class ExecutorCore:
         out = [
             str(p.relative_to(ws))
             for p in sorted(base.rglob("*"))
-            if p.is_file() and not p.is_symlink()
+            if p.is_file()
+            and not p.is_symlink()
+            and not {"__pycache__", ".pytest_cache", ".deps"} & set(p.relative_to(ws).parts)
         ]
         self.audit(run_id, "list_dir", {"path": path})
         return out
@@ -130,6 +132,7 @@ class ExecutorCore:
             "--user", f"{os.getuid()}:{os.getgid()}",
             "--workdir", "/work",
             "-e", "HOME=/tmp",
+            "-e", "PYTHONDONTWRITEBYTECODE=1",
         ]  # fmt: skip
         for k, v in (env or {}).items():
             args += ["-e", f"{k}={v}"]

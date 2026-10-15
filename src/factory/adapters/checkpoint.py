@@ -9,7 +9,9 @@ from langgraph.checkpoint.postgres import PostgresSaver
 
 
 @contextmanager
-def postgres_saver(dsn: str) -> Iterator[PostgresSaver]:
+def postgres_saver(dsn: str, *, setup: bool = True) -> Iterator[PostgresSaver]:
+    """setup=False for the restricted application role (migrations run as the owner)."""
     with PostgresSaver.from_conn_string(dsn) as saver:
-        saver.setup()
+        if setup:
+            saver.setup()
         yield saver

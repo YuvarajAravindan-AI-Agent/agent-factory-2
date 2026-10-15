@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import psycopg
+from psycopg import sql
 
 GENESIS = "0" * 64
 RUN_ID_RE = r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
@@ -99,6 +100,35 @@ CREATE TABLE IF NOT EXISTS approvals (
 def setup_schema(dsn: str) -> None:
     with psycopg.connect(dsn, autocommit=True) as c:
         c.execute(SCHEMA)
+
+
+def grant_app_role(admin_dsn: str, role: str, password: str) -> None:
+    """Create/refresh the restricted application role. It may append to audit_log but has no
+    UPDATE/DELETE/TRUNCATE, cannot create objects, and cannot touch other tables."""
+    ident = sql.Identifier(role)
+    with psycopg.connect(admin_dsn, autocommit=True) as c:
+        exists = c.execute("SELECT 1 FROM pg_roles WHERE rolname=%s", (role,)).fetchone()
+        verb = "ALTER" if exists else "CREATE"
+        c.execute(
+            sql.SQL(verb + " ROLE {} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD {}").format(
+                ident, sql.Literal(password)
+            )
+        )
+        c.execute(sql.SQL("REVOKE ALL ON ALL TABLES IN SCHEMA public FROM {}").format(ident))
+        c.execute(sql.SQL("REVOKE CREATE ON SCHEMA public FROM {}").format(ident))
+        c.execute(sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(ident))
+        c.execute(sql.SQL("GRANT SELECT, INSERT ON audit_log TO {}").format(ident))
+        c.execute(sql.SQL("GRANT USAGE ON SEQUENCE audit_log_seq_seq TO {}").format(ident))
+        c.execute(sql.SQL("GRANT SELECT, INSERT, UPDATE ON approvals TO {}").format(ident))
+        for t in ("checkpoints", "checkpoint_blobs", "checkpoint_writes"):
+            if c.execute("SELECT to_regclass(%s)", (f"public.{t}",)).fetchone()[0]:  # type: ignore[index]
+                c.execute(
+                    sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON {} TO {}").format(
+                        sql.Identifier(t), ident
+                    )
+                )
+        if c.execute("SELECT to_regclass('public.checkpoint_migrations')").fetchone()[0]:  # type: ignore[index]
+            c.execute(sql.SQL("GRANT SELECT ON checkpoint_migrations TO {}").format(ident))
 
 
 class PgAudit:

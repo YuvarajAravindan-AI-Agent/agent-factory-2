@@ -12,7 +12,7 @@ RUN_ID_RE = r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
 
 @dataclass(frozen=True)
 class Policy:
-    allowed_images: tuple[str, ...] = ()
+    allowed_images: tuple[str, ...] = ()  # see policy.yaml
     cpu: float = 2
     memory_mb: int = 2048
     pids: int = 256

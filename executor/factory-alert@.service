@@ -1,0 +1,10 @@
+[Unit]
+Description=Agent Factory alert for failed unit %i
+
+[Service]
+Type=oneshot
+User=factory-exec
+WorkingDirectory=/opt/agent-factory-2
+EnvironmentFile=/opt/agent-factory-2/.env
+Environment=PYTHONPATH=/opt/agent-factory-2/src HOME=/var/lib/factory
+ExecStart=/opt/agent-factory-2/.venv/bin/python -m factory.cli alert "systemd unit %i failed on contabo-tally (audit chain broken or job error). Check: journalctl -u %i"

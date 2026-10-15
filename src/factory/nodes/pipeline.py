@@ -131,12 +131,18 @@ def build_nodes(p: Ports) -> dict[str, Node]:
     def tester(state: FactoryState) -> Update:
         resp, upd = _call(p, state, "tester", "fast", "add tests for the workspace")
         p.sandbox.write_file(state["run_id"], "tests/test_app.py", resp.text)
-        result = p.sandbox.run(state["run_id"], "test", SANDBOX_IMAGE, ["pytest", "-q"])
+        result = p.sandbox.run(
+            state["run_id"],
+            "test",
+            SANDBOX_IMAGE,
+            ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider"],
+        )
         # Green comes from the real run's exit code, never from the model's words.
         upd["tests_green"] = result.exit_code == 0 and not result.timed_out
         m = re.search(r"(\d+) passed", result.stdout)
         if "baseline_tests" not in state and m:
             upd["baseline_tests"] = int(m.group(1))
+            p.gate.record_manifest(state["run_id"])  # freeze the Tester's files for the gate
         p.evidence.audit(state["run_id"], "tester", "test_run", str(result.exit_code))
         return upd
 

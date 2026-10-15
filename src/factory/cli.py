@@ -23,12 +23,30 @@ def main(argv: list[str] | None = None) -> None:
     a.add_argument("run_id")
     a.add_argument("--reject", action="store_true")
     sub.add_parser("verify-audit")
+    sub.add_parser("migrate", help="owner-only: create schema and grant the app role")
+    al = sub.add_parser("alert", help="email the approver (used by systemd OnFailure)")
+    al.add_argument("message")
     sub.add_parser("expire", help="resume runs whose approval lapsed")
     args = ap.parse_args(argv)
 
     from factory import runtime as rt  # imported late: needs the environment
 
+    if args.cmd == "migrate":
+        from factory.adapters.checkpoint import postgres_saver
+        from factory.evidence import grant_app_role, setup_schema
+
+        admin = rt.need("AF_PG_ADMIN_DSN")
+        setup_schema(admin)
+        with postgres_saver(admin):
+            pass
+        grant_app_role(admin, "factory_app", rt.need("AF_APP_PG_PASSWORD"))
+        print("migrated; factory_app granted")
+        return
     approval = rt.build_approval()
+    if args.cmd == "alert":
+        approval.mailer.send(approval.approver_email, "Agent Factory ALERT", args.message)
+        print("alert sent")
+        return
     if args.cmd == "verify-audit":
         ok = PgAudit(rt.need("AF_PG_DSN")).verify_chain()
         print("audit chain OK" if ok else "audit chain BROKEN")

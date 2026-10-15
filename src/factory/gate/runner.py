@@ -40,15 +40,13 @@ class Gate:
     def stage1_fetch(self, run_id: str) -> GateResult:
         """Download wheels through the allow-list proxy; runs none of the project's code."""
         p, d = self.core.policy, self.core.run_dir(run_id)
-        reqs = d / "ws" / "requirements.txt"
-        if not reqs.exists():
-            return GateResult(stage=1, passed=False, log="requirements.txt missing")
+        req = "-r /ws/requirements.txt" if (d / "ws" / "requirements.txt").exists() else ""
         # Fresh start: a previous run's wheels must not satisfy this run's requirements.
         for old in (d / "deps").glob("*"):
             old.unlink()
         cmd = (
             "pip download --only-binary=:all: --no-input --disable-pip-version-check "
-            f"-r /ws/requirements.txt {' '.join(shlex.quote(t) for t in p.gate_tools)} -d /deps"
+            f"{req} {' '.join(shlex.quote(t) for t in p.gate_tools)} -d /deps"
         )
         res = self.core.exec_container(
             run_id, "gate1", p.gate_image, ["sh", "-c", cmd],
@@ -67,9 +65,10 @@ class Gate:
         p, d = self.core.policy, self.core.run_dir(run_id)
         for old in (d / "out").glob("*"):
             old.unlink()
+        req = "-r /work/requirements.txt" if (d / "ws" / "requirements.txt").exists() else ""
         cmd = (
             "pip install --no-index --no-input --disable-pip-version-check "
-            "--find-links /deps --target /tmp/site -r /work/requirements.txt "
+            f"--find-links /deps --target /tmp/site {req} "
             f"{' '.join(shlex.quote(t) for t in p.gate_tools)} >/tmp/pip.log 2>&1 "
             "|| { cat /tmp/pip.log; exit 97; }; "
             "PYTHONPATH=/tmp/site:/work PYTHONDONTWRITEBYTECODE=1 "
