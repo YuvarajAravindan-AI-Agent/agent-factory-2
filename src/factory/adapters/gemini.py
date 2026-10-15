@@ -18,13 +18,14 @@ from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel, ValidationError
 
 from factory.config import ModelConfig
+from factory.nodes.bundle import CodeBundle
 from factory.ports.models import ModelRequest, ModelResponse
 from factory.state import ReviewFindings
 
 log = logging.getLogger(__name__)
 
 # Schemas the model may be asked to fill (request.schema_name).
-SCHEMAS: dict[str, type[BaseModel]] = {"ReviewFindings": ReviewFindings}
+SCHEMAS: dict[str, type[BaseModel]] = {"ReviewFindings": ReviewFindings, "CodeBundle": CodeBundle}
 
 ChatFactory = Callable[[str, float], BaseChatModel]
 
@@ -145,7 +146,7 @@ class GeminiModel:
             text = obj.model_dump_json()
         else:
             raw = chat.invoke(request.prompt)
-            text = raw.text if hasattr(raw, "text") and not callable(raw.text) else str(raw.content)
+            text = text_of(raw.content)
         usage: dict[str, Any] = getattr(raw, "usage_metadata", None) or {}
         return text, int(usage.get("input_tokens", 0)), int(usage.get("output_tokens", 0))
 
@@ -177,6 +178,21 @@ class GeminiModel:
     def _describe(exc: BaseException, attempts: int) -> str:
         chain = " <- ".join(f"{type(e).__name__}({_status(e)})" for e in cause_chain(exc))
         return f"model call failed after {attempts} attempt(s): {chain}"
+
+
+def text_of(content: Any) -> str:
+    """Gemini 3+ returns a list of blocks (text, thought signatures); keep only the text."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for b in content:
+            if isinstance(b, str):
+                parts.append(b)
+            elif isinstance(b, dict) and b.get("type") == "text":
+                parts.append(str(b.get("text", "")))
+        return "".join(parts)
+    return str(content)
 
 
 class SchemaMiss(Exception):

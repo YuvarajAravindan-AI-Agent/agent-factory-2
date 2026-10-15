@@ -152,10 +152,16 @@ def test_config_rules() -> None:
 def test_graph_runs_through_the_gemini_adapter_on_prior_auth_spec() -> None:
     """Plan and code come from a scripted chat model, not Gemini: this proves the wiring,
     not model quality."""
-    code = "from fastapi import FastAPI\napp = FastAPI()\n"
+    import json
+
+    src = "from fastapi import FastAPI\napp = FastAPI()\n"
+    code = json.dumps({"files": [{"path": "src/app.py", "content": src}]})
+    tests_bundle = json.dumps(
+        {"files": [{"path": "tests/test_app.py", "content": "def test_x():\n    assert True\n"}]}
+    )
     review = '{"critical":0,"high":0,"summary":"ok"}'
     allow = '{"verdict":"ALLOW"}'
-    items = [allow, "PLAN: three endpoints", code, "tests", review, "# README", allow]
+    items = [allow, "PLAN: three endpoints", code, tests_bundle, review, "# README", allow]
     chat = Scripted(items=items)
     model = GeminiModel(CFG, lambda _m, _t: chat, sleep=lambda _s: None)
     sandbox = FakeSandbox(lambda _c: CommandResult(exit_code=0, stdout="3 passed"))
@@ -170,3 +176,14 @@ def test_graph_runs_through_the_gemini_adapter_on_prior_auth_spec() -> None:
     assert st["status"] == "Accepted" and st["tokens_used"] > 0
     ast.parse(sandbox.read_file("r", "src/app.py"))  # the "code" at least parses
     assert ports.evidence.read("r", "plan/plan.md").startswith("PLAN")
+
+
+def test_text_of_handles_gemini_block_content() -> None:
+    from factory.adapters.gemini import text_of
+
+    blocks = [
+        {"type": "text", "text": '{"verdict":"ALLOW"}', "extras": {"signature": "abc"}},
+        {"type": "thinking", "thinking": "hidden"},
+    ]
+    assert text_of(blocks) == '{"verdict":"ALLOW"}'
+    assert text_of("plain") == "plain" and text_of(["a", "b"]) == "ab"

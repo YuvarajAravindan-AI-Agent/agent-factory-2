@@ -53,3 +53,5 @@ class FactoryState(TypedDict, total=False):
     package_sha256: str
     calls: Annotated[list[dict[str, object]], operator.add]
     guardrail_findings: list[str]
+    last_test_log: str
+    tests_written: bool

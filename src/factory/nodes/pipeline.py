@@ -12,6 +12,8 @@ from langgraph.types import interrupt
 from pydantic import ValidationError
 
 from factory.guardrails import classify, scan_files, scan_text
+from factory.nodes import prompts
+from factory.nodes.bundle import is_test_path, parse_bundle, safe_path, strip_fences
 from factory.ports import ApprovalPort, EvidencePort, GatePort, ModelPort, SandboxPort
 from factory.ports.models import ModelRequest, ModelResponse
 from factory.state import (
@@ -24,6 +26,7 @@ Update = dict[str, Any]
 Node = Callable[[FactoryState], Update]
 
 SANDBOX_IMAGE = "factory-sandbox"
+SANDBOX_TEST_CMD = ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider"]
 
 
 class Ports:
@@ -117,40 +120,76 @@ def build_nodes(p: Ports) -> dict[str, Node]:
     def screen_in(state: FactoryState) -> Update:
         return screen(state, state["spec"], "spec", "guardrail/in.json")
 
+    def workspace_text(run_id: str, only_tests: bool | None = None) -> str:
+        parts = []
+        for f in sorted(p.sandbox.list_dir(run_id)):
+            if only_tests is not None and is_test_path(f) != only_tests:
+                continue
+            parts.append(f"### FILE: {f}\n{p.sandbox.read_file(run_id, f)}")
+        return "\n\n".join(parts) or "(no files yet)"
+
+    def write_files(
+        state: FactoryState, text: str, fallback_path: str, *, allow_tests: bool, allow_src: bool
+    ) -> None:
+        """Write a CodeBundle (or, for plain text, one fallback file). Paths are validated and
+        the role may only touch the file kinds it owns: the Fixer can never edit tests."""
+        run = state["run_id"]
+        bundle = parse_bundle(text)
+        files = (
+            [(f.path, f.content) for f in bundle.files]
+            if bundle
+            else [(fallback_path, strip_fences(text))]
+        )
+        for path, content in files:
+            rel = safe_path(path)
+            ok = rel is not None and (allow_tests if is_test_path(rel) else allow_src)
+            if not ok:
+                p.evidence.audit(run, "executor", "rejected_path", str(path)[:200])
+                continue
+            assert rel is not None
+            p.sandbox.write_file(run, rel, content)
+
     def architect(state: FactoryState) -> Update:
-        resp, upd = _call(p, state, "architect", "strong", f"plan for spec:\n{state['spec']}")
+        resp, upd = _call(p, state, "architect", "strong", prompts.architect(state["spec"]))
         p.evidence.write(state["run_id"], "plan/plan.md", resp.text)
         upd["plan"] = resp.text
         return upd
 
     def coder(state: FactoryState) -> Update:
-        resp, upd = _call(p, state, "coder", "strong", f"code the plan:\n{state['plan']}")
-        p.sandbox.write_file(state["run_id"], "src/app.py", resp.text)
+        resp, upd = _call(
+            p, state, "coder", "strong", prompts.coder(state["spec"], state["plan"]), "CodeBundle"
+        )
+        write_files(state, resp.text, "src/app.py", allow_tests=False, allow_src=True)
         return upd
 
     def tester(state: FactoryState) -> Update:
-        resp, upd = _call(p, state, "tester", "fast", "add tests for the workspace")
-        p.sandbox.write_file(state["run_id"], "tests/test_app.py", resp.text)
-        result = p.sandbox.run(
-            state["run_id"],
-            "test",
-            SANDBOX_IMAGE,
-            ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider"],
-        )
+        run = state["run_id"]
+        upd: Update = {}
+        if not state.get("tests_written"):  # authored exactly once; later rounds only re-run
+            prompt = prompts.tester(state["spec"], workspace_text(run, False))
+            resp, upd = _call(p, state, "tester", "fast", prompt, "CodeBundle")
+            write_files(state, resp.text, "tests/test_app.py", allow_tests=True, allow_src=False)
+            upd["tests_written"] = True
+        result = p.sandbox.run(run, "test", SANDBOX_IMAGE, SANDBOX_TEST_CMD)
         # Green comes from the real run's exit code, never from the model's words.
         upd["tests_green"] = result.exit_code == 0 and not result.timed_out
+        upd["last_test_log"] = (result.stdout + result.stderr)[-3000:]
         m = re.search(r"(\d+) passed", result.stdout)
         if "baseline_tests" not in state and m:
             upd["baseline_tests"] = int(m.group(1))
-            p.gate.record_manifest(state["run_id"])  # freeze the Tester's files for the gate
-        p.evidence.audit(state["run_id"], "tester", "test_run", str(result.exit_code))
+            p.gate.record_manifest(run)  # freeze the Tester's files for the gate
+        p.evidence.audit(run, "tester", "test_run", str(result.exit_code))
         return upd
 
     def fixer_tests(state: FactoryState) -> Update:
+        run = state["run_id"]
         rounds = state.get("test_fix_rounds", 0) + 1
         tier = "fast" if rounds == 1 else "strong"  # escalate on later attempts
-        resp, upd = _call(p, state, "fixer", tier, f"fix failing tests, round {rounds}")
-        p.sandbox.write_file(state["run_id"], "src/app.py", resp.text)
+        prompt = prompts.fixer_tests(
+            state["spec"], workspace_text(run), state.get("last_test_log", ""), rounds
+        )
+        resp, upd = _call(p, state, "fixer", tier, prompt, "CodeBundle")
+        write_files(state, resp.text, "src/app.py", allow_tests=False, allow_src=True)
         upd["test_fix_rounds"] = rounds
         return upd
 
@@ -173,7 +212,7 @@ def build_nodes(p: Ports) -> dict[str, Node]:
                 {**state, "tokens_used": used},
                 "reviewer",
                 "fast",
-                "review against the spec",
+                prompts.reviewer(state["spec"], workspace_text(state["run_id"])),
                 "ReviewFindings",
             )
             used = step["tokens_used"]
@@ -194,21 +233,20 @@ def build_nodes(p: Ports) -> dict[str, Node]:
         return upd
 
     def fixer_review(state: FactoryState) -> Update:
-        resp, upd = _call(
-            p,
-            state,
-            "fixer",
-            "strong",
-            "fix review findings; full review file:\n"
-            + p.evidence.read(state["run_id"], "review/review.json"),
+        run = state["run_id"]
+        prompt = prompts.fixer_review(
+            state["spec"], workspace_text(run), p.evidence.read(run, "review/review.json")
         )
-        p.sandbox.write_file(state["run_id"], "src/app.py", resp.text)
+        resp, upd = _call(p, state, "fixer", "strong", prompt, "CodeBundle")
+        write_files(state, resp.text, "src/app.py", allow_tests=False, allow_src=True)
         upd["review_fix_rounds"] = state.get("review_fix_rounds", 0) + 1
         return upd
 
     def docs(state: FactoryState) -> Update:
-        resp, upd = _call(p, state, "docs", "fast", "write README and runbook")
-        p.sandbox.write_file(state["run_id"], "README.md", resp.text)
+        resp, upd = _call(
+            p, state, "docs", "fast", prompts.docs(state["spec"], workspace_text(state["run_id"]))
+        )
+        p.sandbox.write_file(state["run_id"], "README.md", strip_fences(resp.text))
         return upd
 
     def read_workspace(run_id: str) -> dict[str, str]:

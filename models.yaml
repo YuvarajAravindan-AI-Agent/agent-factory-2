@@ -1,7 +1,8 @@
-# Model tiers. Confirm current IDs on the day phase 2 starts; placeholders only.
+# Model tiers (served by vertex-gateway; both verified through it on 2026-10-15).
+# After 2026-12-16 swap the tiers to Bedrock/other IDs here only.
 tiers:
-  strong: "TBD-confirm-in-phase-2"
-  fast: "TBD-confirm-in-phase-2"
+  strong: "gemini-4-argon"
+  fast: "gemini-3.8-flash"
 roles:
   architect: strong
   coder: strong
