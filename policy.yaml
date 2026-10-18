@@ -1,0 +1,20 @@
+# Executor allow-lists and limits (enforced by src/factory/executor).
+allowed_images:
+  - python:3.12-slim
+  - factory-sandbox
+limits:
+  cpu: 2
+  memory_mb: 2048
+  pids: 256
+  command_timeout_s: 300
+network:
+  sandbox: none
+  gate_stage1: allow-list-proxy
+  gate_stage2: none
+executor:
+  runtime: runsc
+  runs_root: /var/lib/factory/runs
+  fetch_network: af-fetch
+  proxy_url: http://172.30.77.2:3128
+  gate_image: python:3.12-slim
+  gate_tools: [pytest]

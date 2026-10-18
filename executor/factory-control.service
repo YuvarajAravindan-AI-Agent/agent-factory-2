@@ -1,0 +1,17 @@
+[Unit]
+Description=Agent Factory control service (approval page; Caddy fronts it)
+After=network.target docker.service
+
+[Service]
+User=factory-exec
+Group=factory-exec
+WorkingDirectory=/opt/agent-factory-2
+EnvironmentFile=/opt/agent-factory-2/.env
+Environment=PYTHONPATH=/opt/agent-factory-2/src
+Environment=HOME=/var/lib/factory
+ExecStart=/opt/agent-factory-2/.venv/bin/python -m factory.control.serve
+Restart=on-failure
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

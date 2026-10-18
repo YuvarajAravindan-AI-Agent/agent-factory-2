@@ -1,0 +1,7 @@
+# Policy for real-model runs: nondeterministic, so tolerances are wider and time is gated.
+max_extra_fix_rounds: 2
+max_extra_blockers: 0
+token_growth: 0.5
+tests_floor: 0.7
+wall_growth: 1.0
+wall_slack_s: 60

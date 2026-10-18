@@ -1,0 +1,5 @@
+# Agent sandbox image: libraries are baked in because agent commands have no network.
+# Keep in step with LIBS in src/factory/nodes/prompts.py.
+FROM python:3.12-slim
+RUN pip install --no-cache-dir pytest fastapi httpx pydantic sqlalchemy uvicorn
+USER 65534

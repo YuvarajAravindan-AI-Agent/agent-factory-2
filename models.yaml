@@ -1,0 +1,14 @@
+# Model tiers (served by vertex-gateway; both verified through it on 2026-10-15).
+# After 2026-12-16 swap the tiers to Bedrock/other IDs here only.
+tiers:
+  strong: "gemini-4-argon"
+  fast: "gemini-3.8-flash"
+roles:
+  architect: strong
+  coder: strong
+  fixer: fast
+  tester: fast
+  docs: fast
+  reviewer: fast   # must differ from the coder's tier or version
+  classifier: fast
+temperature: 0.0
